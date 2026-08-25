@@ -1,0 +1,12 @@
+# Ядро
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.13
+edge-tts>=6.1.0
+playsound3>=3.0.0
+pyttsx3>=2.90
+google-generativeai>=0.7.0
+requests>=2.31.0
+psutil>=5.9.0
+# Telegram голосовые
+pydub>=0.25.1
+feedparser>=6.0.10

@@ -1,0 +1,53 @@
+{
+  "user": {
+    "name": "Максим",
+    "timezone": "Europe/Moscow",
+    "city": "Минск"
+  },
+  "voice": {
+    "engine": "edge-tts",
+    "tts_voice": "ru-RU-DmitryNeural",
+    "fallback_engine": "pyttsx3",
+    "rate": "+0%",
+    "volume": "100%"
+  },
+  "stt": {
+    "engine": "google",
+    "language": "ru-RU",
+    "vosk_model_path": "models/vosk-ru"
+  },
+  "brain": {
+    "provider": "gemini",
+    "model": "gemini-1.5-flash",
+    "api_key": "ВСТАВЬ_СЮДА_КЛЮЧ_GEMINI",
+    "sarcasm_level": 7,
+    "max_history": 20
+  },
+  "telegram": {
+    "enabled": false,
+    "bot_token": "ВСТАВЬ_ТОКЕН_ОТ_BOTFATHER",
+    "chat_id": ""
+  },
+  "session": {
+    "autosave_interval_min": 10,
+    "restore_command": [
+      "я готов работать",
+      "начинаем работу",
+      "пора работать"
+    ],
+    "rest_command": [
+      "давай отдохнём",
+      "давай отдохнем",
+      "перерыв"
+    ]
+  },
+  "proactive": {
+    "idle_detect_min": 90,
+    "eye_rest_interval_min": 60,
+    "evening_report_time": "21:00",
+    "morning_greeting": true
+  },
+  "web_ports": {
+    "dashboard": 52915
+  }
+}

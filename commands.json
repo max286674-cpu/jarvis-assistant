@@ -1,0 +1,122 @@
+{
+  "work_mode": {
+    "phrases": [
+      "я готов работать",
+      "начинаем работу"
+    ],
+    "actions": [
+      {
+        "type": "open_app",
+        "target": ""
+      },
+      {
+        "type": "open_folder",
+        "target": ""
+      },
+      {
+        "type": "open_url",
+        "target": ""
+      }
+    ],
+    "hint": "Заполни target: путь к программе (например C:/Program Files/.../Code.exe), папке или ссылке. Можно добавить сколько угодно действий."
+  },
+  "rest_mode": {
+    "phrases": [
+      "давай отдохнём",
+      "давай отдохнем"
+    ],
+    "actions": [
+      {
+        "type": "open_url",
+        "target": "https://youtube.com"
+      }
+    ]
+  },
+  "custom_examples": {
+    "hint": "Добавляй свои команды в этот формат. type может быть: open_app, open_folder, open_url, run_cmd, say",
+    "music": {
+      "phrases": [
+        "включи музыку"
+      ],
+      "actions": [
+        {
+          "type": "open_url",
+          "target": "https://music.youtube.com"
+        }
+      ]
+    }
+  },
+  "ai_tools": {
+    "phrases": [
+      "нейросети",
+      "мои нейросети",
+      "панель нейросетей"
+    ],
+    "actions": [
+      {
+        "type": "open_url",
+        "target": "https://gemini.google.com"
+      },
+      {
+        "type": "open_url",
+        "target": "https://chatgpt.com"
+      },
+      {
+        "type": "open_url",
+        "target": "https://claude.ai"
+      },
+      {
+        "type": "open_url",
+        "target": "https://perplexity.ai"
+      }
+    ]
+  },
+  "chatgpt": {
+    "phrases": [
+      "открой чат gpt",
+      "чатджипити"
+    ],
+    "actions": [
+      {
+        "type": "open_url",
+        "target": "https://chatgpt.com"
+      }
+    ]
+  },
+  "midjourney": {
+    "phrases": [
+      "открой миджорни",
+      "генерация картинок"
+    ],
+    "actions": [
+      {
+        "type": "open_url",
+        "target": "https://www.midjourney.com"
+      }
+    ]
+  },
+  "goszakupki": {
+    "phrases": [
+      "госзакупки",
+      "открой госзакупки"
+    ],
+    "actions": [
+      {
+        "type": "open_url",
+        "target": "http://www.goszakupki.by/tenders"
+      }
+    ]
+  },
+  "icetrade": {
+    "phrases": [
+      "айс трейд",
+      "тендеры беларуси"
+    ],
+    "actions": [
+      {
+        "type": "open_url",
+        "target": "http://icetrade.by"
+      }
+    ]
+  }
+}
