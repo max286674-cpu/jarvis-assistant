@@ -1,14 +1,4 @@
-"""LLM-мозг Джарвиса: OpenRouter + автоматический выбор сильной модели.
-
-Модели намеренно выбираются по принципу quality/cost:
-- DeepSeek V4 Flash 0731 — дешёвый массовый слой;
-- GLM-5.3-Flash — основной быстрый слой;
-- Qwen3.8 Flash — документы/мультимодальные и сложные задачи;
-- Qwen3.8 Max / Kimi K3 — только тяжёлые задачи.
-
-API-ключ берётся из переменной OPENROUTER_API_KEY.
-Gemini оставлен как необязательный legacy fallback.
-"""
+"""LLM-мозг Джарвиса: OpenRouter + автоматический выбор сильной модели."""
 from pathlib import Path
 from collections import deque
 import hashlib
@@ -44,60 +34,37 @@ DEFAULT_MODELS = {
     "max": "moonshotai/kimi-k3",
 }
 
-# Явные premium-модели не используются без необходимости.
-# Порог можно менять через config.json → brain.routing.
-
-
 class Brain:
     def __init__(self, brain_cfg: dict, user_name: str):
         self.cfg = brain_cfg
-        self.provider = brain_cfg.get("provider", "openrouter").lower()
-        self.max_history = int(brain_cfg.get("max_history", 12))
-        self.temperature = float(brain_cfg.get("temperature", 0.2))
-        self.timeout = int(brain_cfg.get("timeout_seconds", 90))
+        # Переменные окружения имеют приоритет над старым config.json.
+        self.provider = os.getenv("JARVIS_LLM_PROVIDER", brain_cfg.get("provider", "openrouter")).lower()
+        self.max_history = int(os.getenv("JARVIS_MAX_HISTORY", brain_cfg.get("max_history", 12)))
+        self.temperature = float(os.getenv("JARVIS_TEMPERATURE", brain_cfg.get("temperature", 0.2)))
+        self.timeout = int(os.getenv("JARVIS_TIMEOUT", brain_cfg.get("timeout_seconds", 90)))
+        self.max_output_tokens = int(os.getenv("JARVIS_MAX_OUTPUT", brain_cfg.get("max_output_tokens", 1600)))
         self.models = {**DEFAULT_MODELS, **brain_cfg.get("models", {})}
-        self.cache_ttl = int(brain_cfg.get("cache_ttl_seconds", 300))
+        self.cache_ttl = int(os.getenv("JARVIS_CACHE_TTL", brain_cfg.get("cache_ttl_seconds", 300)))
         self.cache = {}
         self.history = deque(maxlen=self.max_history * 2)
-
         self.user_name = user_name
-        self.prompt = SYSTEM_PROMPT.format(
-            user=user_name,
-        )
+        self.prompt = SYSTEM_PROMPT.format(user=user_name)
+
         profile_path = Path(__file__).resolve().parent.parent / "profile.md"
         if profile_path.exists():
-            self.prompt += (
-                "\n\n## Досье пользователя (учитывай только там, где это уместно):\n"
-                + profile_path.read_text(encoding="utf-8")
-            )
+            self.prompt += "\n\n## Досье пользователя (учитывай только там, где уместно):\n" + profile_path.read_text(encoding="utf-8")
 
         self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        self.base_url = os.getenv(
-            "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
-        ).rstrip("/")
-        self.enabled = bool(self.api_key) if self.provider == "openrouter" else False
-
-        # Legacy Gemini support, если пользователь хочет временно оставить старый ключ.
-        self.gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-        self.legacy_gemini = bool(self.gemini_key) and self.provider == "gemini"
+        self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+        self.enabled = bool(self.api_key) and self.provider == "openrouter"
 
     def _route(self, text: str) -> tuple[str, str]:
-        """Дешёвый локальный роутер: не тратим отдельный LLM-запрос на классификацию."""
+        """Локальная маршрутизация без отдельного платного LLM-запроса."""
         low = text.lower()
         routing = self.cfg.get("routing", {})
-
-        hard_words = routing.get("hard_keywords", [
-            "архитектур", "рефактор", "сложн", "исследован", "документ",
-            "диплом", "курсов", "научн", "анализ кода", "полный проект",
-            "найди причину", "разработай систему", "спроектируй",
-        ])
-        doc_words = routing.get("document_keywords", [
-            "pdf", "docx", "word", "отчёт", "отчет", "лаборатор", "таблиц",
-            "презентац", "документ", "файл", "скриншот", "изображен",
-        ])
-        max_words = routing.get("max_keywords", [
-            "очень слож", "критически важ", "финальная проверка", "экспертная проверка",
-        ])
+        max_words = routing.get("max_keywords", ["очень слож", "критически важ", "финальная проверка", "экспертная проверка"])
+        hard_words = routing.get("hard_keywords", ["архитектур", "рефактор", "сложн", "исследован", "диплом", "курсов", "научн", "анализ кода", "полный проект", "найди причину", "разработай систему", "спроектируй"])
+        doc_words = routing.get("document_keywords", ["pdf", "docx", "word", "отчёт", "отчет", "лаборатор", "таблиц", "презентац", "документ", "файл", "скриншот", "изображен"])
 
         if any(w in low for w in max_words):
             return "max", self.models["max"]
@@ -105,11 +72,7 @@ class Brain:
             return "hard", self.models["hard"]
         if any(w in low for w in doc_words):
             return "document", self.models["document"]
-
-        # Очень короткие бытовые запросы не требуют дорогой модели.
-        if len(text.strip()) <= 80 and not any(x in low for x in (
-            "код", "програм", "java", "python", "c++", "sql", "access", "ошиб",
-        )):
+        if len(text.strip()) <= 80 and not any(x in low for x in ("код", "програм", "java", "python", "c++", "sql", "access", "ошиб")):
             return "cheap", self.models["cheap"]
         return "main", self.models["main"]
 
@@ -139,18 +102,8 @@ class Brain:
         messages = [{"role": "system", "content": self.prompt}]
         messages.extend(list(self.history))
         messages.append({"role": "user", "content": text})
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "max_tokens": int(self.cfg.get("max_output_tokens", 1600)),
-        }
-        response = requests.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=self.timeout,
-        )
+        payload = {"model": model, "messages": messages, "temperature": self.temperature, "max_tokens": self.max_output_tokens}
+        response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload, timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
         answer = data["choices"][0]["message"]["content"].strip()
@@ -159,18 +112,14 @@ class Brain:
         return answer
 
     def ask(self, text: str) -> str:
-        if not text.strip():
+        if not text.strip() or not self.enabled:
             return ""
-
         model = self.selected_model(text)
         key = self._cache_key(model, text)
         cached = self._cache_get(key)
         if cached:
+            print(f"[LLM cache] {model}")
             return cached
-
-        if not self.enabled:
-            return ""
-
         try:
             answer = self._openrouter(text, model)
             self.cache[key] = (time.time(), answer)
@@ -178,7 +127,6 @@ class Brain:
             return answer
         except Exception as e:
             print(f"[Ошибка LLM {model}: {e}]")
-            # Без дополнительного LLM-запроса используем дешёвый fallback.
             fallback = self.models["cheap"]
             if model != fallback:
                 try:
