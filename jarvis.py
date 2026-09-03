@@ -37,20 +37,16 @@ class Jarvis:
             self.reminders, self.brain, self.code_helper, self.telegram,
         )
         self.tenders = TenderRadar(self.speaker, self.telegram)
-        self.router.attach(
-            CryptoWatch(self.speaker, self.telegram), self.tenders,
-        )
+        self.router.attach(CryptoWatch(self.speaker, self.telegram), self.tenders)
 
     def handle_text(self, text: str) -> str:
-        answer = self.router.handle(text)
-        return answer or "..."
+        return self.router.handle(text)
 
     def speak(self, text: str) -> None:
         if text and text != "...":
             self.speaker.say(text)
 
     def proactive_loop(self) -> None:
-        """Фоновые проактивные фичи: напоминания уже в своём потоке."""
         pcfg = CONFIG.get("proactive", {})
         eye_interval = pcfg.get("eye_rest_interval_min", 60) * 60
         last_eye = time.time()
@@ -76,7 +72,7 @@ def run_voice(jarvis: Jarvis) -> None:
         text = listener.listen_once()
         if text:
             print(f"🗣 Вы: {text}")
-            if any(w in text for w in ("выход", "отключись", "до свидания", "завершить работу")):
+            if any(w in text.lower() for w in ("выход", "отключись", "до свидания", "завершить работу")):
                 jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
                 break
             try:
@@ -89,7 +85,6 @@ def run_voice(jarvis: Jarvis) -> None:
 
 def run_text(jarvis: Jarvis) -> None:
     print("💬 Текстовый режим. Пишите команды ('выход' — выход).")
-    jarvis.speak("Джарвис на связи, сэр. Текстовый канал активен.")
     while True:
         try:
             text = input("Вы: ").strip()
@@ -99,18 +94,20 @@ def run_text(jarvis: Jarvis) -> None:
             continue
         if text.lower() in ("выход", "exit"):
             break
-        answer = jarvis.handle_text(text)
-        jarvis.speak(answer)
+        try:
+            print(f"Джарвис: {jarvis.handle_text(text)}")
+        except Exception as e:
+            print(f"[Ошибка: {e}]")
 
 
 def check_config(jarvis: Jarvis) -> None:
     print("=== Диагностика Джарвиса ===")
-    brain_ok = jarvis.brain.enabled
-    tg_ok = jarvis.telegram.enabled
-    print(f"Мозг Gemini:      {'✅ подключён' if brain_ok else '❌ нет ключа (config.json → brain.api_key)'}")
-    print(f"Telegram:         {'✅ включён' if tg_ok else '⚪ отключён (config.json → telegram)'}")
-    print(f"Голос:            {CONFIG.get('voice', {}).get('tts_voice')}")
-    print(f"Кодовое слово:    {CONFIG.get('session', {}).get('restore_command')}")
+    print(f"LLM provider:      {jarvis.brain.provider}")
+    print(f"LLM status:        {'✅ OpenRouter подключён' if jarvis.brain.enabled else '❌ нет OPENROUTER_API_KEY'}")
+    print(f"Routing model:     {jarvis.brain.selected_model('проверка обычного запроса')}")
+    print(f"Telegram:          {'✅ включён' if jarvis.telegram.enabled else '⚪ отключён'}")
+    print(f"Голос:             {CONFIG.get('voice', {}).get('tts_voice')}")
+    print(f"Кодовое слово:     {CONFIG.get('session', {}).get('restore_command')}")
     print("Готов к работе, сэр.")
 
 
