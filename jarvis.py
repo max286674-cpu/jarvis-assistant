@@ -12,6 +12,7 @@ from core.config import CONFIG
 from core.speaker import Speaker
 from core.actions import ActionExecutor
 from core.brain import Brain
+from core.system_control import SystemControl
 from core.router import Router
 from features.sessions import SessionManager
 from features.reminders import ReminderEngine
