@@ -1,5 +1,5 @@
 """Jarvis entry point. Voice-first agent with interruptible full-duplex TTS."""
-import sys, threading, time
+import re, sys, threading, time
 from core.config import CONFIG
 from core.duplex_speaker import DuplexSpeaker
 from core.actions import ActionExecutor
@@ -64,12 +64,20 @@ class Jarvis:
             if time.monotonic()-last>=interval:
                 self.speak("Небольшой перерыв для глаз.", blocking=False); last=time.monotonic()
 
+def _is_tts_echo(text, spoken):
+    if not text or not spoken: return False
+    words=lambda s:set(re.findall(r"[а-яёa-z0-9]{4,}", s.lower()))
+    heard, source=words(text), words(spoken)
+    if not heard or not source: return False
+    return len(heard & source) / len(heard) >= 0.70
+
 def run_voice(j):
     from core.listener import Listener
     listener=Listener(CONFIG.get("stt",{}))
     try: listener.calibrate()
     except Exception as e: print(f"Микрофон недоступен: {e}"); sys.exit(1)
     j.speak("Джарвис на связи. Говорите.")
+    last_answer=""
     while True:
         text=listener.listen_once()
         if not text: continue
@@ -81,17 +89,21 @@ def run_voice(j):
             answer=j.handle_text(text)
             if answer == "...":
                 j.speaker.stop(); continue
-            # Озвучка идёт в отдельном потоке. Микрофон остаётся активным и может перебить ответ.
+            last_answer=answer
             j.speak(answer, blocking=False)
             while j.speaker.speaking:
                 interruption = listener.listen_once()
-                if interruption:
-                    print("Перебивание:", interruption)
-                    j.speaker.stop()
-                    if interruption.lower().strip() in ("выход", "отключись"):
-                        j.speak("Отключаюсь."); return
-                    followup = j.handle_text(interruption)
-                    j.speak(followup, blocking=False)
+                if not interruption: continue
+                if _is_tts_echo(interruption, last_answer):
+                    print("[Listener] Игнорирую собственную озвучку")
+                    continue
+                print("Перебивание:", interruption)
+                j.speaker.stop()
+                if interruption.lower().strip() in ("выход", "отключись"):
+                    j.speak("Отключаюсь."); return
+                followup = j.handle_text(interruption)
+                last_answer=followup
+                j.speak(followup, blocking=False)
         except Exception as e:
             print("Ошибка:",e)
 
