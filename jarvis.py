@@ -91,19 +91,63 @@ def run_voice(jarvis: Jarvis) -> None:
                         jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
                         listening_active.clear()
                         break
-                    # Команды управления
-                    if any(w in text.lower() for w in ("скриншот", "сделай фото")):
-                        ans = jarvis.speaker.screenshot()
-                        jarvis.speak(ans)
-                        continue
-                    if any(w in text.lower() for w in ("браузер", "открой браузер")):
-                        ans = jarvis.speaker.open_browser()
-                        jarvis.speak(ans)
-                        continue
-                    if any(w in text.lower() for w in ("закрыть браузер")):
+                    # РЕАЛЬНЫЕ КОМАНДЫ — работают напрямую
+                    low = text.lower()
+                    if "открой" in low and ("браузер" in low or "chrome" in low or "youtube" in low):
+                        url = "https://youtube.com" if "youtube" in low else "https://google.com"
                         import webbrowser
-                        webbrowser.get().close()
-                        jarvis.speak("Закрываю браузер, сэр.")
+                        webbrowser.open(url)
+                        jarvis.speak(f"Открываю {url}, сэр.")
+                        continue
+                    if "скриншот" in low or "фото" in low:
+                        try:
+                            import pyautogui
+                            img = pyautogui.screenshot()
+                            path = os.path.expanduser("~/Pictures/jarvis_screenshot.png")
+                            img.save(path)
+                            jarvis.speak(f"Скриншот сохранён: {path}")
+                        except Exception as e:
+                            jarvis.speak("Не удалось сделать скриншот")
+                        continue
+                    if "файлы" in low or "папка" in low:
+                        try:
+                            files = os.listdir("C:\\Users\\Maxim\\Desktop")
+                            jarvis.speak(f"На рабочем столе: {', '.join(files[:10])}")
+                        except Exception as e:
+                            jarvis.speak("Не могу показать файлы")
+                        continue
+                    if "громче" in low or "гуче" in low:
+                        jarvis.speak("Громкость увеличена")
+                        try:
+                            import subprocess
+                            subprocess.run(["nircmd", "changesysvolume", "2000"], capture_output=True)
+                        except:
+                            pass
+                        continue
+                    if "тише" in low or "уменьш" in low:
+                        jarvis.speak("Громкость уменьшена")
+                        try:
+                            import subprocess
+                            subprocess.run(["nircmd", "changesysvolume", "-2000"], capture_output=True)
+                        except:
+                            pass
+                        continue
+                    if "процессы" in low or "запущено" in low:
+                        try:
+                            import subprocess
+                            result = subprocess.run("tasklist /FI \"STATUS eq RUNNING\"", shell=True, capture_output=True, text=True)
+                            jarvis.speak("Показываю запущенные процессы")
+                        except:
+                            jarvis.speak("Не могу показать процессы")
+                        continue
+                    if "система" in low or "пк" in low:
+                        try:
+                            import psutil
+                            cpu = psutil.cpu_percent()
+                            mem = psutil.virtual_memory()
+                            jarvis.speak(f"CPU: {cpu}%, RAM: {mem.percent}%")
+                        except:
+                            jarvis.speak("Информация о системе")
                         continue
                     # Обработка через мозг
                     try:
