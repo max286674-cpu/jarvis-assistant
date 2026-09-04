@@ -1,9 +1,6 @@
-import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from core.agent_tools import Tool, ToolRegistry
 from core.memory import MemoryStore
@@ -21,7 +18,7 @@ class RuntimeContractsTests(unittest.TestCase):
 
     def test_unknown_tool_does_not_crash(self):
         registry = ToolRegistry()
-        self.assertIn("неизвестен", registry.execute("missing", {}).lower())
+        self.assertIn("не найден", registry.execute("missing", {}).lower())
 
     def test_memory_roundtrip(self):
         with tempfile.TemporaryDirectory() as td:
@@ -34,7 +31,7 @@ class RuntimeContractsTests(unittest.TestCase):
     def test_arbitrary_shell_is_not_available(self):
         executor = ActionExecutor(None)
         result = executor.run({"type": "run_cmd", "command": "whoami"})
-        self.assertIn("запрещ", result.lower())
+        self.assertIn("отключено", result.lower())
 
 
 if __name__ == "__main__":
