@@ -75,6 +75,11 @@ def run_voice(jarvis: Jarvis) -> None:
             if any(w in text.lower() for w in ("выход", "отключись", "до свидания", "завершить работу")):
                 jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
                 break
+            # Прерывание речи по слову "стоп"
+            if any(w in text.lower() for w in ("стоп", "молчи", "тихо", "замолчи", "хватит")):
+                jarvis.speak("Останавливаюсь, сэр.")
+                # Прерываем текущую речь (если возможно)
+                continue
             try:
                 answer = jarvis.handle_text(text)
                 jarvis.speak(answer)
