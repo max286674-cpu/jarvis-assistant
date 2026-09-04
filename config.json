@@ -17,11 +17,25 @@
     "vosk_model_path": "models/vosk-ru"
   },
   "brain": {
-    "provider": "gemini",
-    "model": "gemini-1.5-flash",
-    "api_key": "ВСТАВЬ_СЮДА_КЛЮЧ_GEMINI",
-    "sarcasm_level": 7,
-    "max_history": 20
+    "provider": "openrouter",
+    "model": "z-ai/glm-5.3-flash",
+    "max_history": 20,
+    "temperature": 0.2,
+    "timeout_seconds": 90,
+    "max_output_tokens": 1600,
+    "cache_ttl_seconds": 300,
+    "models": {
+      "cheap": "deepseek/deepseek-v4-flash-0731",
+      "main": "z-ai/glm-5.3-flash",
+      "document": "qwen/qwen3.8-flash",
+      "hard": "qwen/qwen3.8-max",
+      "max": "moonshotai/kimi-k3"
+    },
+    "routing": {
+      "max_keywords": ["очень слож", "критически важ", "финальная проверка", "экспертная проверка"],
+      "hard_keywords": ["архитектур", "рефактор", "сложн", "исследован", "диплом", "курсов", "научн", "анализ кода", "полный проект", "найди причину", "разработай систему", "спроектируй"],
+      "document_keywords": ["pdf", "docx", "word", "отчёт", "отчет", "лаборатор", "таблиц", "презентац", "документ", "файл", "скриншот", "изображен"]
+    }
   },
   "telegram": {
     "enabled": false,
