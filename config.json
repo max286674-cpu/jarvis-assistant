@@ -6,9 +6,9 @@
   },
   "voice": {
     "engine": "edge-tts",
-    "tts_voice": "ru-RU-DmitryNeural",
+    "tts_voice": "en-US-GuyNeural",
     "fallback_engine": "pyttsx3",
-    "rate": "+0%",
+    "rate": "+20%",
     "volume": "100%"
   },
   "stt": {
@@ -21,8 +21,8 @@
     "model": "z-ai/glm-5.3-flash",
     "max_history": 20,
     "temperature": 0.7,
-    "timeout_seconds": 90,
-    "max_output_tokens": 1600,
+    "timeout_seconds": 30,
+    "max_output_tokens": 600,
     "cache_ttl_seconds": 300,
     "models": {
       "cheap": "deepseek/deepseek-v4-flash-0731",

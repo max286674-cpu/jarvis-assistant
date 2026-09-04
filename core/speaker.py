@@ -20,10 +20,10 @@ class Speaker:
 
     async def _edge(self, text: str) -> None:
         import playsound3, tempfile, os
-        tts = edge_tts.Communicate(
-            text, self.cfg.get("tts_voice", "ru-RU-DmitryNeural"),
-            rate=self.cfg.get("rate", "+0%"),
-        )
+        # Всегда используем мужской голос, без дублирования
+        voice = "en-US-GuyNeural"
+        rate = self.cfg.get("rate", "+20%")
+        tts = edge_tts.Communicate(text, voice, rate=rate)
         tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         await tts.save(tmp.name)
         try:
