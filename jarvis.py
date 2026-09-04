@@ -72,14 +72,28 @@ def run_voice(jarvis: Jarvis) -> None:
         text = listener.listen_once()
         if text:
             print(f"🗣 Вы: {text}")
+            # Выход
             if any(w in text.lower() for w in ("выход", "отключись", "до свидания", "завершить работу")):
                 jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
                 break
             # Прерывание речи по слову "стоп"
             if any(w in text.lower() for w in ("стоп", "молчи", "тихо", "замолчи", "хватит")):
                 jarvis.speak("Останавливаюсь, сэр.")
-                # Прерываем текущую речь (если возможно)
                 continue
+            # Команды управления
+            if any(w in text.lower() for w in ("скриншот", "сделай фото")):
+                ans = jarvis.speaker.screenshot()
+                jarvis.speak(ans)
+                continue
+            if any(w in text.lower() for w in ("браузер", "открой браузер")):
+                ans = jarvis.speaker.open_browser()
+                jarvis.speak(ans)
+                continue
+            if any(w in text.lower() for w in ("закрыть браузер")):
+                webbrowser.get().close()
+                jarvis.speak("Закрываю браузер, сэр.")
+                continue
+            # Обработка через мозг
             try:
                 answer = jarvis.handle_text(text)
                 jarvis.speak(answer)

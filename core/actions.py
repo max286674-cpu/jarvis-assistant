@@ -62,3 +62,27 @@ class ActionExecutor:
             url = "https://" + url
         webbrowser.open(url)
         return "Открываю браузер."
+
+    @staticmethod
+    def screenshot(path: str = None) -> str:
+        try:
+            import pyautogui
+            img = pyautogui.screenshot()
+            save_path = path or os.path.expanduser("~/Pictures/jarvis_screenshot.png")
+            img.save(save_path)
+            return f"Скриншот сохранён: {save_path}"
+        except Exception as e:
+            return f"Не удалось сделать скриншот: {e}"
+
+    @staticmethod
+    def open_browser(url: str = "https://google.com") -> str:
+        webbrowser.open(url)
+        return f"Открываю браузер: {url}"
+
+    @staticmethod
+    def run_system_command(cmd: str) -> str:
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            return result.stdout[:500] if result.stdout else "Команда выполнена."
+        except Exception as e:
+            return f"Ошибка выполнения: {e}"
