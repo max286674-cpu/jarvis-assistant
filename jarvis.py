@@ -58,6 +58,7 @@ class Jarvis:
 
 
 def run_voice(jarvis: Jarvis) -> None:
+    import threading
     from core.listener import Listener
     listener = Listener(CONFIG.get("stt", {}))
     print("🎤 Калибрую микрофон... не говорите 2 секунды")
@@ -68,38 +69,61 @@ def run_voice(jarvis: Jarvis) -> None:
         sys.exit(1)
     jarvis.speak("Джарвис на связи, сэр. Все системы в норме.")
     print("✅ Слушаю... (Ctrl+C — выход)")
-    while True:
-        text = listener.listen_once()
-        if text:
-            print(f"🗣 Вы: {text}")
-            # Выход
-            if any(w in text.lower() for w in ("выход", "отключись", "до свидания", "завершить работу")):
-                jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
-                break
-            # Прерывание речи по слову "стоп"
-            if any(w in text.lower() for w in ("стоп", "молчи", "тихо", "замолчи", "хватит")):
-                jarvis.speak("Останавливаюсь, сэр.")
-                continue
-            # Команды управления
-            if any(w in text.lower() for w in ("скриншот", "сделай фото")):
-                ans = jarvis.speaker.screenshot()
-                jarvis.speak(ans)
-                continue
-            if any(w in text.lower() for w in ("браузер", "открой браузер")):
-                ans = jarvis.speaker.open_browser()
-                jarvis.speak(ans)
-                continue
-            if any(w in text.lower() for w in ("закрыть браузер")):
-                webbrowser.get().close()
-                jarvis.speak("Закрываю браузер, сэр.")
-                continue
-            # Обработка через мозг
+
+    # Параллельное прослушивание: слушаем даже во время речи
+    listening_active = threading.Event()
+    listening_active.set()
+
+    def listen_loop():
+        while listening_active.is_set():
             try:
-                answer = jarvis.handle_text(text)
-                jarvis.speak(answer)
+                text = listener.listen_once()
+                if text:
+                    print(f"🗣 Вы: {text}")
+                    # Прерывание речи
+                    if any(w in text.lower() for w in ("стоп", "молчи", "тихо", "замолчи", "хватит")):
+                        jarvis.speaker.stop()
+                        jarvis.speak("Останавливаюсь, сэр.")
+                        continue
+                    # Выход
+                    if any(w in text.lower() for w in ("выход", "отключись", "до свидания", "завершить работу")):
+                        jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
+                        listening_active.clear()
+                        break
+                    # Команды управления
+                    if any(w in text.lower() for w in ("скриншот", "сделай фото")):
+                        ans = jarvis.speaker.screenshot()
+                        jarvis.speak(ans)
+                        continue
+                    if any(w in text.lower() for w in ("браузер", "открой браузер")):
+                        ans = jarvis.speaker.open_browser()
+                        jarvis.speak(ans)
+                        continue
+                    if any(w in text.lower() for w in ("закрыть браузер")):
+                        import webbrowser
+                        webbrowser.get().close()
+                        jarvis.speak("Закрываю браузер, сэр.")
+                        continue
+                    # Обработка через мозг
+                    try:
+                        answer = jarvis.handle_text(text)
+                        jarvis.speak(answer)
+                    except Exception as e:
+                        print(f"[Ошибка обработки: {e}]")
+                        jarvis.speak("Что-то пошло не по протоколу, сэр.")
             except Exception as e:
-                print(f"[Ошибка обработки: {e}]")
-                jarvis.speak("Что-то пошло не по протоколу, сэр.")
+                print(f"[Ошибка прослушивания: {e}]")
+
+    listener_thread = threading.Thread(target=listen_loop, daemon=True)
+    listener_thread.start()
+
+    # Основной поток — просто держим программу живой
+    try:
+        while listening_active.is_set():
+            threading.Event().wait(0.5)
+    except KeyboardInterrupt:
+        listening_active.clear()
+        jarvis.speak("Отключаюсь. Возвращайтесь, сэр.")
 
 
 def run_text(jarvis: Jarvis) -> None:

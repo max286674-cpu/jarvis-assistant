@@ -1,7 +1,6 @@
-"""Голос Джарвиса: edge-tts (онлайн, красивый русский голос) + pyttsx3 (офлайн-фолбэк)."""
+"""Голос Джарвиса: edge-tts (онлайн) + pyttsx3 (офлайн) с возможностью остановки."""
 import asyncio
 import threading
-
 import edge_tts
 
 
@@ -9,10 +8,13 @@ class Speaker:
     def __init__(self, voice_cfg: dict):
         self.cfg = voice_cfg
         self._lock = threading.Lock()
+        self._stop_requested = threading.Event()
+        self._current_engine = None
 
     def say(self, text: str) -> None:
         print(f"🤖 Джарвис: {text}")
         with self._lock:
+            self._stop_requested.clear()
             try:
                 asyncio.run(self._edge(text))
             except Exception:
@@ -20,7 +22,6 @@ class Speaker:
 
     async def _edge(self, text: str) -> None:
         import playsound3, tempfile, os
-        # Всегда используем мужской голос, без дублирования
         voice = "ru-RU-DmitryNeural"
         rate = self.cfg.get("rate", "+20%")
         tts = edge_tts.Communicate(text, voice, rate=rate)
@@ -30,6 +31,15 @@ class Speaker:
             playsound3.playsound(tmp.name)
         finally:
             os.unlink(tmp.name)
+
+    def stop(self) -> None:
+        """Останавливает текущую речь."""
+        self._stop_requested.set()
+        if self._current_engine:
+            try:
+                self._current_engine.stop()
+            except Exception:
+                pass
 
     def screenshot(self, path: str = None) -> str:
         try:
@@ -50,6 +60,7 @@ class Speaker:
         try:
             import pyttsx3
             engine = pyttsx3.init()
+            self._current_engine = engine
             engine.setProperty("rate", 180)
             for v in engine.getProperty("voices"):
                 if "ru" in (v.id + v.name).lower():
@@ -59,3 +70,5 @@ class Speaker:
             engine.runAndWait()
         except Exception as e:
             print(f"[TTS недоступен: {e}]")
+        finally:
+            self._current_engine = None
