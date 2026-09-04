@@ -1,7 +1,7 @@
-"""Jarvis entry point. Input -> agent -> tools -> answer."""
+"""Jarvis entry point. Voice-first agent with interruptible full-duplex TTS."""
 import sys, threading, time
 from core.config import CONFIG
-from core.speaker import Speaker
+from core.duplex_speaker import DuplexSpeaker
 from core.actions import ActionExecutor
 from core.agent_tools import Tool, build_default_registry
 from core.brain import Brain
@@ -18,7 +18,7 @@ from features.news import get_news, day_digest
 
 class Jarvis:
     def __init__(self):
-        self.speaker = Speaker(CONFIG.get("voice", {})); self.executor = ActionExecutor(self.speaker)
+        self.speaker = DuplexSpeaker(CONFIG.get("voice", {})); self.executor = ActionExecutor(self.speaker)
         self.sessions = SessionManager(self.speaker); self.reminders = ReminderEngine(self.speaker)
         self.telegram = TelegramBot(CONFIG.get("telegram", {}), self)
         self.tenders = TenderRadar(self.speaker, self.telegram); self.crypto_watch = CryptoWatch(self.speaker, self.telegram)
@@ -34,11 +34,11 @@ class Jarvis:
             schema={"type":"object","properties":props}
             if required: schema["required"]=required
             self.tools.register(Tool(name, desc, schema, fn, risk))
-        reg("weather","Получить погоду", {"city":{"type":"string"}}, get_weather,["city"])
-        reg("currency_rates","Получить курсы валют",{},get_currency)
+        reg("weather","Получить текущую погоду", {"city":{"type":"string"}}, get_weather,["city"])
+        reg("currency_rates","Получить актуальные курсы валют",{},get_currency)
         reg("crypto_price","Получить актуальные цены криптовалют",{},get_crypto)
         reg("world_news","Получить свежую мировую сводку",{},day_digest)
-        reg("news_category","Получить новости категории world/belarus/crypto/tech",{"category":{"type":"string"}},get_news,["category"])
+        reg("news_category","Получить свежие новости категории world/belarus/crypto/tech",{"category":{"type":"string"}},get_news,["category"])
         reg("system_status","Показать состояние компьютера",{},get_system_stats)
         reg("joke","Рассказать короткую шутку",{},get_joke)
         reg("translate","Перевести текст",{"text":{"type":"string"},"language":{"type":"string","enum":["en","ru"]}},translate,["text"])
@@ -50,29 +50,50 @@ class Jarvis:
         reg("tender_watch","Настроить тендерный радар",{"instruction":{"type":"string"}},self.tenders.set_keywords,["instruction"])
         reg("check_tenders","Проверить новые тендеры",{},self.tenders.daily_check)
 
-    def handle_text(self,text): return self.router.handle(text)
-    def speak(self,text):
-        if text and text!="...": self.speaker.say(text)
+    def handle_text(self, text):
+        return self.router.handle(text)
+
+    def speak(self, text, blocking=True):
+        if text and text != "...":
+            self.speaker.say(text, blocking=blocking)
+
     def proactive_loop(self):
         interval=int(CONFIG.get("proactive",{}).get("eye_rest_interval_min",60))*60; last=time.monotonic()
         while True:
             time.sleep(15)
             if time.monotonic()-last>=interval:
-                self.speak("Сэр, небольшой перерыв для глаз."); last=time.monotonic()
+                self.speak("Небольшой перерыв для глаз.", blocking=False); last=time.monotonic()
 
 def run_voice(j):
     from core.listener import Listener
     listener=Listener(CONFIG.get("stt",{}))
     try: listener.calibrate()
     except Exception as e: print(f"Микрофон недоступен: {e}"); sys.exit(1)
-    j.speak("Джарвис на связи, сэр.")
+    j.speak("Джарвис на связи. Говорите.")
     while True:
         text=listener.listen_once()
         if not text: continue
         print("Вы:",text)
-        if text.lower().strip() in ("выход","отключись","до свидания","завершить работу"): j.speak("Отключаюсь, сэр."); break
-        try: j.speak(j.handle_text(text))
-        except Exception as e: print("Ошибка:",e)
+        low=text.lower().strip()
+        if low in ("выход","отключись","до свидания","завершить работу"):
+            j.speak("Отключаюсь."); break
+        try:
+            answer=j.handle_text(text)
+            if answer == "...":
+                j.speaker.stop(); continue
+            # Озвучка идёт в отдельном потоке. Микрофон остаётся активным и может перебить ответ.
+            j.speak(answer, blocking=False)
+            while j.speaker.speaking:
+                interruption = listener.listen_once()
+                if interruption:
+                    print("Перебивание:", interruption)
+                    j.speaker.stop()
+                    if interruption.lower().strip() in ("выход", "отключись"):
+                        j.speak("Отключаюсь."); return
+                    followup = j.handle_text(interruption)
+                    j.speak(followup, blocking=False)
+        except Exception as e:
+            print("Ошибка:",e)
 
 def run_text(j):
     while True:
@@ -85,6 +106,7 @@ def check_config(j):
     print("LLM:","OK" if j.brain.enabled else "ERROR",j.brain.models.get("main"))
     print("Tools:",", ".join(j.tools.names()))
     print("Telegram:","OK" if j.telegram.enabled else "OFF")
+    print("Voice: full-duplex / interruptible TTS")
 
 if __name__=="__main__":
     j=Jarvis(); j.telegram.start_polling(); threading.Thread(target=j.proactive_loop,daemon=True).start()
