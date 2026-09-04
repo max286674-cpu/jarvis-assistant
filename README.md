@@ -5,6 +5,8 @@
 
 ## ⚡ Установка (Windows 11)
 
+> **Важно для Python 3.14:** проект использует `sounddevice` вместо `pyaudio` (готовые сборки для 3.14 доступны). `setup.bat` автоматически установит всё.
+
 1. Установи Python 3.10+ с python.org (галочка **Add to PATH** — обязательно!)
 2. Скачай папку `jarvis` на компьютер
 3. Открой PowerShell в папке проекта и выполни:
@@ -12,8 +14,8 @@
 pip install -r requirements.txt
 python jarvis.py --check
 ```
-4. Получи бесплатный ключ Gemini: https://aistudio.google.com/apikey
-   → вставь его в `config.json` → `brain.api_key`
+4. Получи ключ OpenRouter: https://openrouter.ai/keys
+   → вставь его в `.env` → `OPENROUTER_API_KEY=...`
 
 ## 🚀 Запуск
 
@@ -87,6 +89,34 @@ build_exe.bat
 
 ## 🛠 Если что-то не работает
 
-- **Микрофон**: установи `pip install pipwin && pipwin install pyaudio`
+- **Микрофон (Python 3.14)**: проект использует `sounddevice` (готовые wheels). Если не установился — `pip install sounddevice numpy`
 - **Голос**: edge-tts требует интернет; без него включится офлайн pyttsx3
 - **Голосовые в Telegram**: нужен ffmpeg в системе (`winget install ffmpeg`)
+
+## 🧪 Тесты
+
+```bash
+pip install pytest
+pytest tests/ -v
+```
+
+Тесты не требуют API-ключа и не делают запросов в OpenRouter. Проверяют маршрутизацию, кэш, fallback, env-переменные.
+
+## 🤖 OpenRouter и модели
+
+Проект использует OpenRouter с автоматической маршрутизацией по сложности:
+
+| Уровень | Модель | Цена (input/output за 1M) | Когда |
+|---|---|---|---|
+| cheap | `deepseek/deepseek-v4-flash-0731` | $0.05 / $0.16 | короткие вопросы |
+| main | `z-ai/glm-5.3-flash` | $0.075 / $0.25 | обычные задачи |
+| document | `qwen/qwen3.8-flash` | $0.15 / $0.47 | PDF/DOCX/изображения |
+| hard | `qwen/qwen3.8-max` | $2.0 / $6.0 | архитектура, дипломы |
+| max | `moonshotai/kimi-k3` | $2.55 / $12.75 | критически важные |
+
+Переопределить модели можно в `config.json` → `brain.models`.
+
+## 🔒 Безопасность
+
+- `.env` в `.gitignore` — НЕ коммитьте ключи!
+- Если ключ случайно попал в GitHub — отзовите его в OpenRouter и создайте новый.

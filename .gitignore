@@ -3,3 +3,9 @@ __pycache__/
 data/
 models/
 .env
+.venv/
+.pytest_cache/
+*.egg-info/
+.idea/
+.vscode/
+*.log
