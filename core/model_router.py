@@ -10,11 +10,11 @@ class ModelRouter:
         self.research = os.getenv("JARVIS_RESEARCH_MODEL", models.get("research", self.main))
 
     def select(self, text: str) -> str:
-        text = (text or "").lower()
+        text = (text or "").lower().strip()
         research_markers = ("найди", "актуаль", "сравни", "исследуй", "источник", "последние новости", "свежие данные")
+        agent_markers = ("открой", "закрой", "запусти", "файл", "папк", "браузер", "компьютер", "нажми", "напиши в", "удали")
         trivial_markers = ("привет", "спасибо", "понятно", "хорошо", "да", "нет", "который час", "сколько времени")
-        if any(x in text for x in research_markers):
-            return self.research or self.main
-        if len(text) < 45 and any(x in text for x in trivial_markers):
-            return self.cheap or self.main
+        if any(x in text for x in research_markers): return self.research or self.main
+        if any(x in text for x in agent_markers): return self.main
+        if len(text) < 45 and any(x in text for x in trivial_markers): return self.cheap or self.main
         return self.main
