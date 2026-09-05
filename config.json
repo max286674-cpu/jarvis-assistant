@@ -12,6 +12,7 @@
     "cache_ttl_seconds": 0,
     "models": {"main": "z-ai/glm-5.3-flash", "cheap": "deepseek/deepseek-v4-flash-0731", "research": "z-ai/glm-5.3-flash"}
   },
+  "workspace": {"roots": ["~/Desktop", "~/Documents", "~/Downloads"]},
   "telegram": {"enabled": false, "bot_token": "", "chat_id": ""},
   "session": {"autosave_interval_min": 10, "restore_command": ["я готов работать", "начинаем работу", "пора работать"], "rest_command": ["давай отдохнём", "давай отдохнем", "перерыв"]},
   "proactive": {"idle_detect_min": 90, "eye_rest_interval_min": 60, "evening_report_time": "21:00", "morning_greeting": true},
