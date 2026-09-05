@@ -7,6 +7,7 @@ from core.agent_tools import Tool, build_default_registry
 from core.brain import Brain
 from core.router import Router
 from core.state import RuntimeState, RuntimeStateMachine, CancellationToken
+from core.workspace import Workspace
 from core.web_search import search_web
 from features.sessions import SessionManager
 from features.reminders import ReminderEngine
@@ -19,16 +20,22 @@ from features.news import get_news, day_digest
 
 class Jarvis:
     def __init__(self):
-        self.state = RuntimeStateMachine()
-        self.cancel = CancellationToken()
+        self.state = RuntimeStateMachine(); self.cancel = CancellationToken()
         self.speaker = DuplexSpeaker(CONFIG.get("voice", {})); self.executor = ActionExecutor(self.speaker)
         self.sessions = SessionManager(self.speaker); self.reminders = ReminderEngine(self.speaker)
         self.telegram = TelegramBot(CONFIG.get("telegram", {}), self)
         self.tenders = TenderRadar(self.speaker, self.telegram); self.crypto_watch = CryptoWatch(self.speaker, self.telegram)
+        self.workspace = Workspace(CONFIG.get("workspace", {}).get("roots"))
+        self.browser = None
+        try:
+            from core.browser import BrowserAgent
+            self.browser = BrowserAgent()
+        except ImportError:
+            pass
         self.tools = build_default_registry(self.executor, self.reminders, self.telegram if self.telegram.enabled else None, search_web)
         self._register_features()
         self.brain = Brain(CONFIG.get("brain", {}), CONFIG.get("user", {}).get("name", "Сэр"), self.tools)
-        self._register_memory_tools()
+        self._register_memory_tools(); self._register_computer_tools()
         self.code_helper = CodeHelper(self.brain)
         self.router = Router(self.speaker, self.executor, self.sessions, self.reminders, self.brain, self.code_helper, self.telegram)
         self.router.attach(self.crypto_watch, self.tenders)
@@ -36,6 +43,16 @@ class Jarvis:
     def _register_memory_tools(self):
         self.tools.register(Tool("remember_memory", "Сохранить явно указанный пользователем полезный факт в долговременную память", {"type":"object","properties":{"text":{"type":"string"},"category":{"type":"string"}},"required":["text"]}, self.brain.remember))
         self.tools.register(Tool("clear_memory", "Очистить долговременную память", {"type":"object","properties":{}}, self.brain.forget_memory, "confirm"))
+
+    def _register_computer_tools(self):
+        self.tools.register(Tool("list_files", "Показать файлы в разрешённой рабочей папке", {"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}, self.workspace.list_dir))
+        self.tools.register(Tool("read_file", "Прочитать текстовый файл в разрешённой рабочей папке", {"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}, self.workspace.read_text))
+        self.tools.register(Tool("write_file", "Создать или перезаписать текстовый файл в разрешённой рабочей папке", {"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}, self.workspace.write_text, "confirm"))
+        self.tools.register(Tool("delete_file", "Удалить файл из разрешённой рабочей папки", {"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}, self.workspace.delete, "dangerous"))
+        if self.browser:
+            self.tools.register(Tool("browser_open", "Открыть страницу через Playwright", {"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}, self.browser.open))
+            self.tools.register(Tool("browser_snapshot", "Прочитать видимый текст текущей страницы", {"type":"object","properties":{}}, self.browser.snapshot))
+            self.tools.register(Tool("browser_close", "Закрыть браузерный агент", {"type":"object","properties":{}}, self.browser.close))
 
     def _register_features(self):
         def reg(name, desc, props, fn, required=None, risk="safe"):
@@ -58,13 +75,11 @@ class Jarvis:
         reg("tender_watch","Настроить тендерный радар",{"instruction":{"type":"string"}},self.tenders.set_keywords,["instruction"])
         reg("check_tenders","Проверить новые тендеры",{},self.tenders.daily_check)
 
-    def handle_text(self, text):
-        return self.router.handle(text)
+    def handle_text(self, text): return self.router.handle(text)
 
     def speak(self, text, blocking=True):
         if text and text != "...":
-            self.state.set(RuntimeState.SPEAKING)
-            self.speaker.say(text, blocking=blocking)
+            self.state.set(RuntimeState.SPEAKING); self.speaker.say(text, blocking=blocking)
             if blocking: self.state.set(RuntimeState.IDLE)
 
     def proactive_loop(self):
@@ -86,39 +101,26 @@ def run_voice(j):
     listener=Listener(CONFIG.get("stt",{}))
     try: listener.calibrate()
     except Exception as e: print(f"Микрофон недоступен: {e}"); sys.exit(1)
-    j.speak("Джарвис на связи. Говорите.")
-    last_answer=""
+    j.speak("Джарвис на связи. Говорите."); last_answer=""
     while True:
-        j.state.set(RuntimeState.LISTENING)
-        text=listener.listen_once()
+        j.state.set(RuntimeState.LISTENING); text=listener.listen_once()
         if not text: continue
-        print("Вы:",text)
-        low=text.lower().strip()
+        print("Вы:",text); low=text.lower().strip()
         if low in ("выход","отключись","до свидания","завершить работу"):
-            j.state.set(RuntimeState.SPEAKING); j.speak("Отключаюсь."); j.state.stop(); break
+            j.speak("Отключаюсь."); j.state.stop(); break
         try:
-            j.state.set(RuntimeState.THINKING); j.cancel.reset()
-            answer=j.handle_text(text)
-            if answer == "...":
-                j.speaker.stop(); j.state.set(RuntimeState.IDLE); continue
-            last_answer=answer
-            j.state.set(RuntimeState.SPEAKING)
-            j.speak(answer, blocking=False)
+            j.state.set(RuntimeState.THINKING); j.cancel.reset(); answer=j.handle_text(text)
+            if answer == "...": j.speaker.stop(); j.state.set(RuntimeState.IDLE); continue
+            last_answer=answer; j.state.set(RuntimeState.SPEAKING); j.speak(answer, blocking=False)
             while j.speaker.speaking:
-                # During playback use aggressive endpointing: interruption should not wait 6 seconds.
-                interruption = listener.listen_once(start_timeout=0.35, silence_after_speech=0.35, max_phrase=8)
+                interruption=listener.listen_once(start_timeout=0.35, silence_after_speech=0.35, max_phrase=8)
                 if not interruption: continue
-                if _is_tts_echo(interruption, last_answer):
-                    print("[Listener] Игнорирую вероятное эхо собственной озвучки")
-                    continue
-                print("Перебивание:", interruption)
-                j.state.interrupt(); j.cancel.cancel(); j.speaker.stop()
-                if interruption.lower().strip() in ("выход", "отключись"):
+                if _is_tts_echo(interruption,last_answer): continue
+                print("Перебивание:",interruption); j.state.interrupt(); j.cancel.cancel(); j.speaker.stop()
+                if interruption.lower().strip() in ("выход","отключись"):
                     j.speak("Отключаюсь."); j.state.stop(); return
-                j.state.set(RuntimeState.THINKING); j.cancel.reset()
-                followup = j.handle_text(interruption)
-                last_answer=followup
-                j.state.set(RuntimeState.SPEAKING); j.speak(followup, blocking=False)
+                j.state.set(RuntimeState.THINKING); j.cancel.reset(); last_answer=j.handle_text(interruption)
+                j.state.set(RuntimeState.SPEAKING); j.speak(last_answer,blocking=False)
             j.state.set(RuntimeState.IDLE)
         except Exception as e:
             j.state.set(RuntimeState.ERROR); print("Ошибка:",e)
@@ -131,10 +133,7 @@ def run_text(j):
         if text: print("Джарвис:",j.handle_text(text))
 
 def check_config(j):
-    print("LLM:","OK" if j.brain.enabled else "ERROR",j.brain.models.get("main"))
-    print("Tools:",", ".join(j.tools.names()))
-    print("Telegram:","OK" if j.telegram.enabled else "OFF")
-    print("Voice: state-machine + interruptible full-duplex TTS")
+    print("LLM:","OK" if j.brain.enabled else "ERROR",j.brain.models.get("main")); print("Tools:",", ".join(j.tools.names())); print("Telegram:","OK" if j.telegram.enabled else "OFF"); print("Voice: state-machine + interruptible full-duplex TTS")
 
 if __name__=="__main__":
     j=Jarvis(); j.telegram.start_polling(); threading.Thread(target=j.proactive_loop,daemon=True).start()
