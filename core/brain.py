@@ -48,8 +48,7 @@ class Brain:
         self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         self.enabled = bool(self.api_key and self.provider == "openrouter" and self.models["main"])
 
-    def selected_model(self, text):
-        return self.model_router.select(text)
+    def selected_model(self, text): return self.model_router.select(text)
 
     def remember(self, text, category="fact"):
         self.memory.add(text, category)
@@ -63,22 +62,18 @@ class Brain:
         return hashlib.sha256(json.dumps([model, self.prompt, text], ensure_ascii=False).encode()).hexdigest()
 
     def _cache_get(self, key):
-        if not self.cache_ttl:
-            return None
+        if not self.cache_ttl: return None
         item = self.cache.get(key)
-        if not item:
-            return None
+        if not item: return None
         if time.time() - item[0] > self.cache_ttl:
-            self.cache.pop(key, None)
-            return None
+            self.cache.pop(key, None); return None
         return item[1]
 
     def _request(self, messages, model):
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://github.com/max286674-cpu/jarvis-assistant", "X-Title": "MAX Jarvis Assistant"}
         payload = {"model": model, "messages": messages, "temperature": self.temperature, "max_tokens": self.max_output_tokens}
         if self.tools and self.tools.schemas():
-            payload["tools"] = self.tools.schemas()
-            payload["tool_choice"] = "auto"
+            payload["tools"] = self.tools.schemas(); payload["tool_choice"] = "auto"
         response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload, timeout=(10, self.timeout))
         response.raise_for_status()
         return response.json()
@@ -97,7 +92,7 @@ class Brain:
                 answer = (msg.get("content") or "").strip()
                 self.history.append({"role": "user", "content": text})
                 self.history.append({"role": "assistant", "content": answer})
-                return answer
+                return answer or "Готово."
             for call in calls:
                 function = call.get("function", {})
                 name = function.get("name", "")
@@ -108,44 +103,41 @@ class Brain:
                 except (json.JSONDecodeError, TypeError):
                     args = {}
                 result = self.tools.execute(name, args) if self.tools else "Инструменты отключены."
+                if str(result).startswith("ACTION_REQUIRES_CONFIRMATION:"):
+                    return str(result).replace("ACTION_REQUIRES_CONFIRMATION:", "Подтверждение требуется: ", 1)
                 messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "name": name, "content": str(result)[:12000]})
         return "Я остановил цепочку после шести шагов, чтобы не зациклиться."
 
     def ask(self, text):
         text = (text or "").strip()
-        if not text:
-            return ""
+        if not text: return ""
         low = text.lower()
-        if self.tools and self.tools.has_pending() and low in {"да", "давай", "подтверждаю", "подтверждаю действие", "выполняй", "ок"}:
-            return self.tools.confirm_pending(True)
-        if self.tools and self.tools.has_pending() and low in {"нет", "отмена", "отменяю", "не надо", "отбой"}:
-            return self.tools.confirm_pending(False)
+        if self.tools and self.tools.has_pending():
+            if low in {"да", "давай", "подтверждаю", "подтверждаю действие", "выполняй", "ок", "ага"}:
+                return self.tools.confirm_pending(True)
+            if low in {"нет", "отмена", "отменяю", "не надо", "отбой", "стоп"}:
+                return self.tools.confirm_pending(False)
+            return "Есть ожидающее опасное действие. Ответьте «да» для выполнения или «нет» для отмены."
         if not self.enabled:
             return "AI-модуль недоступен: проверь OPENROUTER_API_KEY и модель."
         model = self.selected_model(text)
-        key = self._cache_key(model, text)
-        cached = self._cache_get(key)
-        if cached:
-            return cached
+        cached = self._cache_get(self._cache_key(model, text))
+        if cached: return cached
         try:
             answer = self._openrouter(text, model)
-            if self.cache_ttl:
-                self.cache[key] = (time.time(), answer)
+            if self.cache_ttl: self.cache[self._cache_key(model, text)] = (time.time(), answer)
             print(f"[LLM] {model}")
             return answer
         except Exception as exc:
-            print(f"[LLM error {model}: {exc}]")
+            print(f"[LLM error {model}: {type(exc).__name__}: {exc}]")
             if self.fallback_model and self.fallback_model != model:
                 try:
                     answer = self._openrouter(text, self.fallback_model)
                     print(f"[LLM fallback] {self.fallback_model}")
                     return answer
                 except Exception as fallback_exc:
-                    print(f"[LLM fallback error: {fallback_exc}]")
+                    print(f"[LLM fallback error: {type(fallback_exc).__name__}: {fallback_exc}]")
             return "AI-модуль временно недоступен. Проверьте ключ OpenRouter, модель и интернет-соединение."
 
-    def reset_memory(self):
-        self.history.clear(); self.cache.clear()
-
-    def clear_persistent_memory(self):
-        self.memory.clear(); self.reset_memory()
+    def reset_memory(self): self.history.clear(); self.cache.clear()
+    def clear_persistent_memory(self): self.memory.clear(); self.reset_memory()
