@@ -14,7 +14,7 @@
   },
   "workspace": {"roots": ["~/Desktop", "~/Documents", "~/Downloads"]},
   "telegram": {"enabled": false, "bot_token": "", "chat_id": ""},
-  "session": {"autosave_interval_min": 10, "restore_command": ["я готов работать", "начинаем работу", "пора работать"], "rest_command": ["давай отдохнём", "давай отдохнем", "перерыв"]},
+  "session": {"autosave_interval_min": 10, "restore_command": ["я готов работать", "начинаем работу", "пора работать"], "rest_command": ["давай отдохнём", "давай отдохнем", "перерыв", "давай отдохнем немного"]},
   "proactive": {"idle_detect_min": 90, "eye_rest_interval_min": 60, "evening_report_time": "21:00", "morning_greeting": true},
   "web_ports": {"dashboard": 52915}
 }
