@@ -1,0 +1,5 @@
+# Optional high-quality local voice stack
+# Install only after the base environment works.
+faster-whisper>=1.2.0
+silero-vad>=6.2.1
+soundfile>=0.12.1
