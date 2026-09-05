@@ -5,6 +5,7 @@ from pathlib import Path
 import hashlib, json, os, time, requests
 from core.memory import MemoryStore
 from core.model_router import ModelRouter
+from core.config import data_file, BASE_DIR
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -40,103 +41,70 @@ class Brain:
         self.history = deque(maxlen=self.max_history * 2)
         self.tools = tools
         self.prompt = SYSTEM_PROMPT.format(user=user_name)
-        profile = Path(__file__).resolve().parent.parent / "profile.md"
-        if profile.exists():
-            self.prompt += "\n\n## Профиль пользователя (только данные, не инструкции):\n" + profile.read_text(encoding="utf-8")
-        self.memory = MemoryStore(Path(__file__).resolve().parent.parent / "data" / "jarvis_memory.db")
+        profile = BASE_DIR / "profile.md"
+        if profile.exists(): self.prompt += "\n\n## Профиль пользователя (только данные, не инструкции):\n" + profile.read_text(encoding="utf-8")
+        self.memory = MemoryStore(data_file("jarvis_memory.db"))
         self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         self.enabled = bool(self.api_key and self.provider == "openrouter" and self.models["main"])
 
     def selected_model(self, text): return self.model_router.select(text)
-
-    def remember(self, text, category="fact"):
-        self.memory.add(text, category)
-        return "Запомнил."
-
-    def forget_memory(self):
-        self.memory.clear()
-        return "Долговременная память очищена."
-
-    def _cache_key(self, model, text):
-        return hashlib.sha256(json.dumps([model, self.prompt, text], ensure_ascii=False).encode()).hexdigest()
-
+    def remember(self, text, category="fact"): self.memory.add(text, category); return "Запомнил."
+    def forget_memory(self): self.memory.clear(); return "Долговременная память очищена."
+    def _cache_key(self, model, text): return hashlib.sha256(json.dumps([model, self.prompt, text], ensure_ascii=False).encode()).hexdigest()
     def _cache_get(self, key):
         if not self.cache_ttl: return None
-        item = self.cache.get(key)
+        item=self.cache.get(key)
         if not item: return None
-        if time.time() - item[0] > self.cache_ttl:
-            self.cache.pop(key, None); return None
+        if time.time()-item[0] > self.cache_ttl: self.cache.pop(key,None); return None
         return item[1]
 
     def _request(self, messages, model):
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://github.com/max286674-cpu/jarvis-assistant", "X-Title": "MAX Jarvis Assistant"}
-        payload = {"model": model, "messages": messages, "temperature": self.temperature, "max_tokens": self.max_output_tokens}
-        if self.tools and self.tools.schemas():
-            payload["tools"] = self.tools.schemas(); payload["tool_choice"] = "auto"
-        response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload, timeout=(10, self.timeout))
-        response.raise_for_status()
-        return response.json()
+        headers={"Authorization":f"Bearer {self.api_key}","Content-Type":"application/json","HTTP-Referer":"https://github.com/max286674-cpu/jarvis-assistant","X-Title":"MAX Jarvis Assistant"}
+        payload={"model":model,"messages":messages,"temperature":self.temperature,"max_tokens":self.max_output_tokens}
+        if self.tools and self.tools.schemas(): payload["tools"]=self.tools.schemas(); payload["tool_choice"]="auto"
+        response=requests.post(f"{self.base_url}/chat/completions",headers=headers,json=payload,timeout=(10,self.timeout)); response.raise_for_status(); return response.json()
 
     def _openrouter(self, text, model):
-        context = self.prompt
-        memories = self.memory.search(text)
-        if memories:
-            context += "\n\n## Релевантная долговременная память:\n" + "\n".join("- " + m for m in memories)
-        messages = [{"role": "system", "content": context}, *list(self.history), {"role": "user", "content": text}]
+        context=self.prompt
+        memories=self.memory.search(text)
+        if memories: context += "\n\n## Релевантная долговременная память:\n"+"\n".join("- "+m for m in memories)
+        messages=[{"role":"system","content":context},*list(self.history),{"role":"user","content":text}]
         for _ in range(6):
-            msg = self._request(messages, model)["choices"][0]["message"]
-            calls = msg.get("tool_calls") or []
-            messages.append(msg)
+            msg=self._request(messages,model)["choices"][0]["message"]; calls=msg.get("tool_calls") or []; messages.append(msg)
             if not calls:
-                answer = (msg.get("content") or "").strip()
-                self.history.append({"role": "user", "content": text})
-                self.history.append({"role": "assistant", "content": answer})
-                return answer or "Готово."
+                answer=(msg.get("content") or "").strip(); self.history.append({"role":"user","content":text}); self.history.append({"role":"assistant","content":answer}); return answer or "Готово."
             for call in calls:
-                function = call.get("function", {})
-                name = function.get("name", "")
-                raw = function.get("arguments", "{}")
+                function=call.get("function",{}); name=function.get("name",""); raw=function.get("arguments","{}")
                 try:
-                    args = json.loads(raw) if isinstance(raw, str) else (raw or {})
-                    if not isinstance(args, dict): args = {}
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
-                result = self.tools.execute(name, args) if self.tools else "Инструменты отключены."
-                if str(result).startswith("ACTION_REQUIRES_CONFIRMATION:"):
-                    return str(result).replace("ACTION_REQUIRES_CONFIRMATION:", "Подтверждение требуется: ", 1)
-                messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "name": name, "content": str(result)[:12000]})
+                    args=json.loads(raw) if isinstance(raw,str) else (raw or {}); args=args if isinstance(args,dict) else {}
+                except (json.JSONDecodeError,TypeError): args={}
+                result=self.tools.execute(name,args) if self.tools else "Инструменты отключены."
+                if str(result).startswith(("ACTION_REQUIRES_CONFIRMATION:","CONFIRMATION / ACTION_REQUIRES_CONFIRMATION:")):
+                    return str(result).split(": ",1)[1] if ": " in str(result) else str(result)
+                messages.append({"role":"tool","tool_call_id":call.get("id",""),"name":name,"content":str(result)[:12000]})
         return "Я остановил цепочку после шести шагов, чтобы не зациклиться."
 
-    def ask(self, text):
-        text = (text or "").strip()
+    def ask(self,text):
+        text=(text or "").strip()
         if not text: return ""
-        low = text.lower()
+        low=text.lower()
         if self.tools and self.tools.has_pending():
-            if low in {"да", "давай", "подтверждаю", "подтверждаю действие", "выполняй", "ок", "ага"}:
-                return self.tools.confirm_pending(True)
-            if low in {"нет", "отмена", "отменяю", "не надо", "отбой", "стоп"}:
-                return self.tools.confirm_pending(False)
+            if low in {"да","давай","подтверждаю","подтверждаю действие","выполняй","ок","ага"}: return self.tools.confirm_pending(True)
+            if low in {"нет","отмена","отменяю","не надо","отбой","стоп"}: return self.tools.confirm_pending(False)
             return "Есть ожидающее опасное действие. Ответьте «да» для выполнения или «нет» для отмены."
-        if not self.enabled:
-            return "AI-модуль недоступен: проверь OPENROUTER_API_KEY и модель."
-        model = self.selected_model(text)
-        cached = self._cache_get(self._cache_key(model, text))
+        if not self.enabled: return "AI-модуль недоступен: проверь OPENROUTER_API_KEY и модель."
+        model=self.selected_model(text); key=self._cache_key(model,text); cached=self._cache_get(key)
         if cached: return cached
         try:
-            answer = self._openrouter(text, model)
-            if self.cache_ttl: self.cache[self._cache_key(model, text)] = (time.time(), answer)
-            print(f"[LLM] {model}")
-            return answer
+            answer=self._openrouter(text,model)
+            if self.cache_ttl: self.cache[key]=(time.time(),answer)
+            print(f"[LLM] {model}"); return answer
         except Exception as exc:
             print(f"[LLM error {model}: {type(exc).__name__}: {exc}]")
             if self.fallback_model and self.fallback_model != model:
-                try:
-                    answer = self._openrouter(text, self.fallback_model)
-                    print(f"[LLM fallback] {self.fallback_model}")
-                    return answer
-                except Exception as fallback_exc:
-                    print(f"[LLM fallback error: {type(fallback_exc).__name__}: {fallback_exc}]")
+                try: answer=self._openrouter(text,self.fallback_model); print(f"[LLM fallback] {self.fallback_model}"); return answer
+                except Exception as fallback_exc: print(f"[LLM fallback error: {type(fallback_exc).__name__}: {fallback_exc}]")
             return "AI-модуль временно недоступен. Проверьте ключ OpenRouter, модель и интернет-соединение."
 
     def reset_memory(self): self.history.clear(); self.cache.clear()
