@@ -34,16 +34,14 @@ class ToolRegistry:
         args = args or {}
         if tool.risk in ("confirm", "dangerous"):
             self._pending = PendingAction(name, args, tool.description)
-            return ("ACTION_REQUIRES_CONFIRMATION: "
+            return ("CONFIRMATION / ACTION_REQUIRES_CONFIRMATION: "
                     f"{tool.description}. Я НЕ выполню это действие автоматически. "
                     "Нужно отдельное явное подтверждение пользователя: 'да' или 'подтверждаю'.")
         try: return tool.call(args)
         except Exception as exc: return f"Инструмент {name} завершился с ошибкой: {type(exc).__name__}: {exc}"
 
     def has_pending(self): return self._pending is not None
-
-    def pending_description(self):
-        return self._pending.description if self._pending else ""
+    def pending_description(self): return self._pending.description if self._pending else ""
 
     def confirm_pending(self, approved: bool):
         pending = self._pending
