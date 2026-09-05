@@ -1,7 +1,14 @@
-"""Реестр инструментов Jarvis с валидацией и защитой опасных действий."""
+"""Tool registry with risk levels, pending confirmations and strict JSON schemas."""
 from __future__ import annotations
 import json, re
+from dataclasses import dataclass
 from typing import Any, Callable
+
+@dataclass
+class PendingAction:
+    name: str
+    args: dict
+    description: str
 
 class Tool:
     def __init__(self,name:str,description:str,parameters:dict,handler:Callable[...,Any],risk:str="safe"):
@@ -13,17 +20,41 @@ class Tool:
         return result if isinstance(result,str) else json.dumps(result,ensure_ascii=False,default=str)
 
 class ToolRegistry:
-    def __init__(self): self._tools={}
+    def __init__(self):
+        self._tools={}
+        self._pending: PendingAction | None = None
+
     def register(self,tool): self._tools[tool.name]=tool
     def schemas(self): return [t.schema() for t in self._tools.values()]
+    def names(self): return list(self._tools)
+
     def execute(self,name,args):
         tool=self._tools.get(name)
         if not tool: return f"Инструмент {name!r} не найден."
-        # Confirm-level actions are never silently executed by an LLM.
-        if tool.risk=="confirm": return f"ACTION_REQUIRES_CONFIRMATION: действие {name} требует явного подтверждения пользователя."
-        try: return tool.call(args or {})
+        args = args or {}
+        if tool.risk in ("confirm", "dangerous"):
+            self._pending = PendingAction(name, args, tool.description)
+            return f"ACTION_REQUIRES_CONFIRMATION: {tool.description}. Спросите пользователя и выполните только после явного 'да/подтверждаю'."
+        try: return tool.call(args)
         except Exception as exc: return f"Инструмент {name} завершился с ошибкой: {exc}"
-    def names(self): return list(self._tools)
+
+    def has_pending(self):
+        return self._pending is not None
+
+    def confirm_pending(self, approved: bool):
+        pending = self._pending
+        self._pending = None
+        if not pending:
+            return "Нет ожидающего действия для подтверждения."
+        if not approved:
+            return "Действие отменено."
+        tool = self._tools.get(pending.name)
+        if not tool:
+            return "Ожидаемый инструмент больше недоступен; действие отменено."
+        try:
+            return tool.call(pending.args)
+        except Exception as exc:
+            return f"Подтверждённое действие завершилось с ошибкой: {exc}"
 
 def safe_url(url):
     url=(url or "").strip()
