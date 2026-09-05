@@ -34,27 +34,26 @@ class ToolRegistry:
         args = args or {}
         if tool.risk in ("confirm", "dangerous"):
             self._pending = PendingAction(name, args, tool.description)
-            return f"ACTION_REQUIRES_CONFIRMATION: {tool.description}. Спросите пользователя и выполните только после явного 'да/подтверждаю'."
+            return ("ACTION_REQUIRES_CONFIRMATION: "
+                    f"{tool.description}. Я НЕ выполню это действие автоматически. "
+                    "Нужно отдельное явное подтверждение пользователя: 'да' или 'подтверждаю'.")
         try: return tool.call(args)
-        except Exception as exc: return f"Инструмент {name} завершился с ошибкой: {exc}"
+        except Exception as exc: return f"Инструмент {name} завершился с ошибкой: {type(exc).__name__}: {exc}"
 
-    def has_pending(self):
-        return self._pending is not None
+    def has_pending(self): return self._pending is not None
+
+    def pending_description(self):
+        return self._pending.description if self._pending else ""
 
     def confirm_pending(self, approved: bool):
         pending = self._pending
         self._pending = None
-        if not pending:
-            return "Нет ожидающего действия для подтверждения."
-        if not approved:
-            return "Действие отменено."
+        if not pending: return "Нет ожидающего действия для подтверждения."
+        if not approved: return "Действие отменено."
         tool = self._tools.get(pending.name)
-        if not tool:
-            return "Ожидаемый инструмент больше недоступен; действие отменено."
-        try:
-            return tool.call(pending.args)
-        except Exception as exc:
-            return f"Подтверждённое действие завершилось с ошибкой: {exc}"
+        if not tool: return "Ожидаемый инструмент больше недоступен; действие отменено."
+        try: return tool.call(pending.args)
+        except Exception as exc: return f"Подтверждённое действие завершилось с ошибкой: {type(exc).__name__}: {exc}"
 
 def safe_url(url):
     url=(url or "").strip()
