@@ -12,6 +12,7 @@ from core.web_search import search_web
 from features.sessions import SessionManager
 from features.reminders import ReminderEngine
 from features.code_helper import CodeHelper
+from features.ai_tutor import AiTutor
 from features.telegram_bot import TelegramBot
 from features.crypto_watch import CryptoWatch
 from features.tenders import TenderRadar
@@ -28,10 +29,15 @@ class Jarvis:
         except ImportError: pass
         self.tools=build_default_registry(self.executor,self.reminders,self.telegram if self.telegram.enabled else None,search_web); self._register_features()
         self.brain=Brain(CONFIG.get("brain",{}),CONFIG.get("user",{}).get("name","Сэр"),self.tools); self._register_memory_tools(); self._register_computer_tools()
-        self.code_helper=CodeHelper(self.brain); self.router=Router(self.speaker,self.executor,self.sessions,self.reminders,self.brain,self.code_helper,self.telegram); self.router.attach(self.crypto_watch,self.tenders)
+        self.code_helper=CodeHelper(self.brain,self.workspace)
+        self.ai_tutor=AiTutor(self.brain)
+        self._register_advanced_features()
+        self.router=Router(self.speaker,self.executor,self.sessions,self.reminders,self.brain,self.code_helper,self.telegram); self.router.attach(self.crypto_watch,self.tenders)
+
     def _register_memory_tools(self):
         self.tools.register(Tool("remember_memory","Сохранить явно указанный пользователем полезный факт в долговременную память",{"type":"object","properties":{"text":{"type":"string"},"category":{"type":"string"}},"required":["text"]},self.brain.remember))
         self.tools.register(Tool("clear_memory","Очистить долговременную память",{"type":"object","properties":{}},self.brain.forget_memory,"confirm"))
+
     def _register_computer_tools(self):
         self.tools.register(Tool("list_files","Показать файлы в разрешённой рабочей папке",{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},self.workspace.list_dir))
         self.tools.register(Tool("read_file","Прочитать текстовый файл в разрешённой рабочей папке",{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},self.workspace.read_text))
@@ -41,17 +47,36 @@ class Jarvis:
             self.tools.register(Tool("browser_open","Открыть страницу через Playwright",{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]},self.browser.open))
             self.tools.register(Tool("browser_snapshot","Прочитать видимый текст страницы",{"type":"object","properties":{}},self.browser.snapshot))
             self.tools.register(Tool("browser_close","Закрыть браузер",{"type":"object","properties":{}},self.browser.close))
+
     def _register_features(self):
         def reg(name,desc,props,fn,required=None,risk="safe"):
-            schema={"type":"object","properties":props};
-            if required:schema["required"]=required
+            schema={"type":"object","properties":props}
+            if required: schema["required"]=required
             self.tools.register(Tool(name,desc,schema,fn,risk))
-        reg("weather","Получить текущую погоду",{"city":{"type":"string"}},get_weather,["city"]); reg("currency_rates","Получить актуальные курсы валют",{},get_currency); reg("crypto_price","Получить актуальные цены криптовалют",{},get_crypto)
-        reg("world_news","Получить свежую мировую сводку",{},day_digest); reg("news_category","Получить свежие новости категории",{"category":{"type":"string"}},get_news,["category"]); reg("system_status","Показать состояние компьютера",{},get_system_stats); reg("joke","Рассказать короткую шутку",{},get_joke)
-        reg("translate","Перевести текст",{"text":{"type":"string"},"language":{"type":"string","enum":["en","ru"]}},translate,["text"]); reg("create_task","Добавить задачу",{"text":{"type":"string"}},self.reminders.add_task,["text"])
-        reg("morning_briefing","Собрать утренний брифинг",{},lambda:full_briefing(self.reminders.morning_tasks(),tenders=self.tenders)); reg("crypto_watch","Добавить крипто-наблюдение",{"instruction":{"type":"string"}},self.crypto_watch.add,["instruction"]); reg("crypto_watches","Показать крипто-наблюдения",{},self.crypto_watch.list_watches); reg("clear_crypto_watches","Удалить крипто-наблюдения",{},self.crypto_watch.clear,risk="confirm")
-        reg("tender_watch","Настроить тендерный радар",{"instruction":{"type":"string"}},self.tenders.set_keywords,["instruction"]); reg("check_tenders","Проверить новые тендеры",{},self.tenders.daily_check)
-    def handle_text(self,text):return self.router.handle(text)
+        reg("weather","Получить текущую погоду",{"city":{"type":"string"}},get_weather,["city"])
+        reg("currency_rates","Получить актуальные курсы валют",{},get_currency)
+        reg("crypto_price","Получить актуальные цены криптовалют",{},get_crypto)
+        reg("world_news","Получить свежую мировую сводку",{},day_digest)
+        reg("news_category","Получить свежие новости категории",{"category":{"type":"string","enum":["world","belarus","tech","crypto"]}},get_news,["category"])
+        reg("system_status","Показать состояние компьютера",{},get_system_stats)
+        reg("joke","Рассказать короткую шутку",{},get_joke)
+        reg("translate","Перевести текст",{"text":{"type":"string"},"language":{"type":"string","enum":["en","ru"]}},translate,["text"])
+        reg("create_task","Добавить задачу",{"text":{"type":"string"}},self.reminders.add_task,["text"])
+        reg("complete_task","Закрыть задачу по номеру",{"num":{"type":"integer"}},self.reminders.done_task,["num"])
+        reg("morning_briefing","Собрать утренний брифинг",{},lambda:full_briefing(self.reminders.morning_tasks(),tenders=self.tenders))
+        reg("crypto_watch","Добавить крипто-наблюдение",{"instruction":{"type":"string"}},self.crypto_watch.add,["instruction"])
+        reg("crypto_watches","Показать крипто-наблюдения",{},self.crypto_watch.list_watches)
+        reg("clear_crypto_watches","Удалить крипто-наблюдения",{},self.crypto_watch.clear,risk="confirm")
+        reg("tender_watch","Настроить тендерный радар",{"instruction":{"type":"string"}},self.tenders.set_keywords,["instruction"])
+        reg("check_tenders","Проверить новые тендеры",{},self.tenders.daily_check)
+
+    def _register_advanced_features(self):
+        self.tools.register(Tool("explain_error","Разобрать текст ошибки из буфера обмена",{"type":"object","properties":{}},self.code_helper.explain_error))
+        self.tools.register(Tool("explain_code","Объяснить код из разрешённого файла",{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},self.code_helper.explain_code))
+        self.tools.register(Tool("find_code_bugs","Найти проблемы в коде разрешённого файла",{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},self.code_helper.find_bugs))
+        self.tools.register(Tool("ai_tutor","Учебный режим Jarvis: уроки и объяснения по ИИ",{"type":"object","properties":{"request":{"type":"string"}},"required":["request"]},lambda request:self.ai_tutor.lesson(request)))
+
+    def handle_text(self,text): return self.router.handle(text)
     def speak(self,text,blocking=True):
         if text and text!="...":
             self.state.set(RuntimeState.SPEAKING); self.speaker.say(text,blocking=blocking)
@@ -68,7 +93,6 @@ def _is_tts_echo(text,spoken):
     return bool(heard and source) and len(heard&source)/len(heard)>=0.70
 
 def _voice_turn(j,listener,text):
-    """Use streamed LLM text for normal dialogue and queue sentences immediately for TTS."""
     model=j.brain.selected_model(text); streaming=bool(model==j.brain.model_router.cheap and j.brain.tools)
     if not streaming:
         answer=j.handle_text(text); j.speak(answer,blocking=False); return answer
@@ -77,7 +101,6 @@ def _voice_turn(j,listener,text):
         try: result["answer"]=j.brain.ask_stream(text,j.speaker.stream_sentence)
         except Exception as exc: result["error"]=exc
     thread=threading.Thread(target=worker,daemon=True); thread.start()
-    # Keep the microphone active while the model is generating and TTS is playing.
     while thread.is_alive() or j.speaker.speaking:
         interruption=listener.listen_once(start_timeout=0.25,silence_after_speech=0.30,max_phrase=8)
         if interruption and not _is_tts_echo(interruption,result["answer"]):
@@ -90,30 +113,30 @@ def _voice_turn(j,listener,text):
 def run_voice(j):
     from core.listener import Listener
     listener=Listener(CONFIG.get("stt",{}))
-    try:listener.calibrate()
-    except Exception as e:print(f"Микрофон недоступен: {e}");sys.exit(1)
+    try: listener.calibrate()
+    except Exception as e: print(f"Микрофон недоступен: {e}"); sys.exit(1)
     j.speak("Джарвис на связи. Говорите."); last_answer=""
     while True:
         j.state.set(RuntimeState.LISTENING); text=listener.listen_once()
-        if not text:continue
+        if not text: continue
         print("Вы:",text); low=text.lower().strip()
-        if low in ("выход","отключись","до свидания","завершить работу"):j.speak("Отключаюсь.");j.state.stop();break
+        if low in ("выход","отключись","до свидания","завершить работу"): j.speak("Отключаюсь.");j.state.stop();break
         try:
             j.state.set(RuntimeState.THINKING); j.cancel.reset(); result=_voice_turn(j,listener,text)
             if isinstance(result,tuple) and result[0]=="__INTERRUPTED__":
                 interruption=result[1]; print("Перебивание:",interruption)
-                if interruption.lower().strip() in ("выход","отключись"):j.speak("Отключаюсь.");j.state.stop();return
-                j.state.set(RuntimeState.THINKING); j.cancel.reset(); answer=j.handle_text(interruption); j.speak(answer,blocking=False); last_answer=answer
-            else:last_answer=result
+                if interruption.lower().strip() in ("выход","отключись"): j.speak("Отключаюсь.");j.state.stop();return
+                j.state.set(RuntimeState.THINKING);j.cancel.reset();answer=j.handle_text(interruption);j.speak(answer,blocking=False);last_answer=answer
+            else: last_answer=result
             j.state.set(RuntimeState.IDLE)
-        except Exception as e:j.state.set(RuntimeState.ERROR);print("Ошибка:",e)
+        except Exception as e: j.state.set(RuntimeState.ERROR);print("Ошибка:",e)
 
 def run_text(j):
     while True:
-        try:text=input("Вы: ").strip()
-        except (EOFError,KeyboardInterrupt):break
-        if text.lower() in ("выход","exit"):break
-        if text:print("Джарвис:",j.handle_text(text))
+        try: text=input("Вы: ").strip()
+        except (EOFError,KeyboardInterrupt): break
+        if text.lower() in ("выход","exit"): break
+        if text: print("Джарвис:",j.handle_text(text))
 
 def check_config(j):
     print("LLM:","OK" if j.brain.enabled else "ERROR",j.brain.models.get("main"));print("Tools:",", ".join(j.tools.names()));print("Telegram:","OK" if j.telegram.enabled else "OFF");print("Voice: streaming sentences + interruptible playback")
