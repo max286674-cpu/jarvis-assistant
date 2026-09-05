@@ -1,6 +1,4 @@
-"""Голосовой ввод: sounddevice + простая локальная VAD-логика + Google STT.
-Не записывает фиксированные 10 секунд: ждёт начало речи и завершает запись после паузы.
-"""
+"""Low-latency microphone capture with endpointing; STT backend stays replaceable."""
 import time
 import numpy as np
 import sounddevice as sd
@@ -15,8 +13,8 @@ class Listener:
         self.samplerate = int(stt_cfg.get("sample_rate", 16000))
         self.channels = 1
         self.device = None
-        self.start_threshold = float(stt_cfg.get("start_rms", 450))
-        self.silence_threshold = float(stt_cfg.get("silence_rms", 260))
+        self.start_threshold = float(stt_cfg.get("start_rms", 0.015))
+        self.silence_threshold = float(stt_cfg.get("silence_rms", 0.008))
         self.start_timeout = float(stt_cfg.get("start_timeout", 6))
         self.max_phrase = float(stt_cfg.get("max_phrase_seconds", 15))
         self.silence_after_speech = float(stt_cfg.get("silence_after_speech", 0.8))
@@ -37,18 +35,20 @@ class Listener:
             block = int(1.5 * self.samplerate)
             rec = sd.rec(block, samplerate=self.samplerate, channels=1, dtype="float32", device=self.device); sd.wait()
             rms = float(np.sqrt(np.mean(rec * rec)))
-            # float32 PCM имеет диапазон [-1, 1]. Порог не должен становиться нереалистичным.
             self.start_threshold = max(rms * 3.0, 0.015)
             self.silence_threshold = max(rms * 1.8, 0.008)
             print(f"[Listener] VAD thresholds: start={self.start_threshold:.4f}, silence={self.silence_threshold:.4f}")
         except Exception as e: print(f"[Listener] Ошибка калибровки: {e}")
 
-    def listen_once(self) -> str:
+    def listen_once(self, start_timeout=None, silence_after_speech=None, max_phrase=None) -> str:
         if not self._find_mic(): return ""
-        chunk_seconds = 0.20; chunk = int(self.samplerate * chunk_seconds)
-        frames=[]; started=False; silence=0.0; started_at=None; deadline=time.monotonic()+self.start_timeout
+        chunk_seconds = 0.10
+        chunk = int(self.samplerate * chunk_seconds)
+        start_timeout = self.start_timeout if start_timeout is None else float(start_timeout)
+        silence_after_speech = self.silence_after_speech if silence_after_speech is None else float(silence_after_speech)
+        max_phrase = self.max_phrase if max_phrase is None else float(max_phrase)
+        frames=[]; started=False; silence=0.0; started_at=None; deadline=time.monotonic()+start_timeout
         try:
-            print("[Listener] Слушаю...")
             with sd.InputStream(samplerate=self.samplerate, channels=1, dtype="float32", device=self.device, blocksize=chunk) as stream:
                 while True:
                     data, overflowed = stream.read(chunk)
@@ -62,15 +62,15 @@ class Listener:
                     frames.append(data.copy())
                     if rms < self.silence_threshold: silence += chunk_seconds
                     else: silence=0.0
-                    if silence >= self.silence_after_speech: break
-                    if time.monotonic()-started_at >= self.max_phrase: break
+                    if silence >= silence_after_speech: break
+                    if time.monotonic()-started_at >= max_phrase: break
             audio=np.concatenate(frames,axis=0)
-            pcm=np.clip(audio,-1,1); pcm=(pcm*32767).astype(np.int16)
+            pcm=(np.clip(audio,-1,1)*32767).astype(np.int16)
             data=sr.AudioData(pcm.tobytes(), self.samplerate, 2)
             text=self.recognizer.recognize_google(data, language=self.lang)
             return text.strip()
         except sr.UnknownValueError:
-            print("[Listener] Речь не распознана"); return ""
+            return ""
         except Exception as e:
             print(f"[Listener] Ошибка: {e}"); return ""
 
